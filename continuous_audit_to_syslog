@@ -1,0 +1,91 @@
+#!/bin/bash
+
+## Continuously turn the audit trail into English sentences
+## that are added to the syslog.  This makes the syslog log easier
+## to read when trying to get context for an incident.  These
+## records, while accurate, are not the official audit log
+## which should be reviewed and archived separately.
+##
+## Written by Charlie Todd <zerolagtime@gmail.com>
+## LICENSE: GPL 2.0
+## Copyright 2019 by Charlie Todd
+
+## outline
+##   - continuously tail the audit log, even if it gets rotated
+##   - as each line of raw audit data is read, convert it to
+##     "text" format, like
+##     user1, acting as root, successfully executed /bin/ls
+##   - each line is then fed to syslog with the AUDIT tag,
+##     priority local6.info - adjust to your site if desired
+
+priority="local6.info"
+auditlog="/var/log/audit/audit.log"
+verbose="no"
+
+function serr { 
+   echo "$*" 1>&2 
+}
+usage() {
+   serr "Usage: $(basename $0) [-h] [-v] [-l audit.log]"
+   serr "         [-p <priority|facility.priority>]"
+   if [ "$1" == "long" ]; then
+      serr "Purpose: watch for new audit events, translate to human-speak"
+      serr "         and record the text to syslog where context can be applied"
+      serr "         during investigations of incidents."
+      serr "  -p priority" 
+      serr "  -p facility.priority                 (default: $priority)"
+      serr "     Set the syslog priority or facility and priority for"
+      serr "     audit messages.  See logger(7) for examples."
+      serr "  -l /var/log/audit/audit.log"
+      serr "     The audit file to monitor for new events"
+      serr "  -v Verbose mode.  Show events on stderr as well as in syslog."
+   fi
+   exit 1
+}
+
+testPriority() {
+   echo "$1" | egrep --silent -E -e "^\w+(\.\w+)?$" || {
+      serr "ERROR: invalid priority.  See logger(7) for examples."
+      usage;
+   }
+}
+
+testAuditReadability() {
+   test -r "$1" || {
+      serr "ERROR: you do not have permission to read \"$1\"" 
+      usage;
+   }
+}
+
+while getopts "p:l:vh" o; do
+   case "${o}" in
+      p) 
+         testPriority ${OPTARG}
+         priority=${OPTARG}
+         ;;
+      l) 
+         auditlog=${OPTARG}
+         ;;
+      v)
+         verbose="yes"
+         ;;
+      h) usage long ;;
+      *) usage long ;;
+   esac
+done
+shift $((OPTIND-1))
+
+testAuditReadability "$auditlog"
+
+ifVerbose=""
+if [ "$verbose" == "yes" ]; then
+   ifVerbose="--stderr"
+fi
+tail --follow=name --lines=0 --retry /var/log/audit/audit.log | \
+   ausearch --format text --line-buffered | \
+      ( line='x';  \
+        while [ -n "$line" ]; do  \
+           read line;  \
+           logger $ifVerbose --priority $priority --tag AUDIT  "$line";  \
+        done;  \
+      )
