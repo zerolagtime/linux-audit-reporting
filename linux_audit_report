@@ -23,9 +23,6 @@ offlineArchiveFolder=""
 daysBack=7
 maxDaysBack=365
 ME="${SUDO_USER:-$USER}"
-GlobalErrors=0
-GlobalWarnings=0
-
 
 MYTEMP=${TEMP:-/tmp/$ME}
 if [ ! -d $MYTEMP ]; then
@@ -42,7 +39,7 @@ function usage {
    stderr "Usage: $(basename $0) [-y daysback] [-d archive_dir] [-f]"
    stderr "                      [-a offline_folder]"
    if [ "$1" == "long" ]; then
-      stderr "Purpose: Generate a weekly report of all \"organization-defined"
+      stderr "Purpose: Generate a weekly report of all \"organization-defined\""
       stderr "         auditable events for CNSS 1253 and JSIG AU-2."
       stderr "         Also, it archives the supporting, raw audit events"
       stderr "         next to the report for easy archiving over NFS/SCP."
@@ -167,72 +164,83 @@ function AUSEARCH {
 function lpad {
    cat | sed -e 's/^/    /'
 }
-
+# log the message passed on the command line
+# use -v to put a copy on the screen.  
+# use -f to put a copy to a file
+# use -p to padd four spaces on the left
+# use -e to treat the message as a command line we need to execute
+# provide neither and nothing happens with the log
+# provide both and the user sees what is logged
 function oopsChecker {
-   catUsed=0
-   quiet=0
-   
+   toScreen=0
+   # who knew that overriding IFS on one line would persist across
+   # the script and mess up parameter separation on $* arguments to functions
+   oldIFS=${IFS}
    if [ "$1" == "-v" ]; then
-      catUsed=1
+      toScreen=1
       shift 1
    fi
+   declare -a lines; 
    if [ $# -gt 0 ]; then
-      msg="$*"
+      IFS=$'\n' lines=($*); 
    else
-      msg=$(cat)
-      catUsed=1
+      IFS=$'\n' lines=( $(cat) ); 
    fi
-   if [[ $msg == *"WARNING"* ]]; then
-      GlobalWarnings=$[ $GlobalWarnings + 1 ]
-   elif [[ $msg == *"ERROR"* ]]; then
-      GlobalErrors=$[ $GlobalErrors + 1 ]
-   fi
-   if [ $catUsed -eq 1 ] ; then
-      echo "$msg" | awk -v CYAN=${CYAN} -v RED=${RED} -v NC=${NO_COLOUR} \
+   for idx in ${!lines[@]}; do 
+      msg="${lines[$idx]}"; 
+      if [ $toScreen -eq 1 ] ; then
+         echo "$msg" | awk -v CYAN=${CYAN} -v RED=${RED} -v NC=${NO_COLOUR} \
                -v BRED=${BRED} '
-          /^=====/ { print CYAN $0 NC; next }
-          /WARNING/ { print RED $0 NC; next }
-          /ERROR/   { print BRED $0 NC; next }
-          { print $0 }
-      '
-   fi
+             /^=====/ { print CYAN $0 NC; next }
+             /WARNING/ { print RED $0 NC; next }
+             /ERROR/   { print BRED $0 NC; next }
+             { print $0 }
+            '
+      fi
+      # strip all colouring out of the text report since it is terminal
+      # friendly only
+      echo "$msg" | sed -e 's/\x1b\[[^m]*m//g;' >> $reportFile
+   done
+   IFS=$oldIFS
+   return 0
 }
 
-exec 8> >(while read a; do echo "$a" >&2; echo "$a"  |  sed -e 's/\x1b\[[^m]*m//g;'; done >> $reportFile;  ) 
 # Write output to the screen and a logfile
-function reportLine {
+function logOnly {
    if [ $# -gt 0 ]; then
-       oopsChecker "$*" >&8
-       #echo "$*" >> $reportFile
+      oopsChecker "$*" 
    else
-       #strip the coloring, but still analyze for warnings/errors
-       #oopsChecker | sed -e 's/\x1b\[[^m]*m//g;' >> $reportFile
-       oopsChecker >&8
+      oopsChecker 
    fi
 }
 
-function reportAndScreenLine {
+function logBoth {
+   stderr "logBoth got $# parameters"
    if [ $# -gt 0 ]; then
-       oopsChecker -v "$*" >&8
-       #echo "$*" >> $reportFile
+      oopsChecker -v "$*" 
    else
-       #oopsChecker | tee -a $reportFile
-       oopsChecker >&2
+      oopsChecker -v
    fi
 }
-
-set -x
-date | reportLine
-ps -ef | reportLine
-exit 0
+###stderr ">>> basic"
+###logBoth "===="
+###stderr ">>> colored"
+###logBoth "WARNING message"
+###stderr ">>> blank line"
+###logBoth ""
+###stderr ">>> pipe"
+###/bin/ls -1 | logBoth
+###stderr ">>> pipe with blank lines"
+###(echo "line 1, then blank"; echo ""; echo "line 2 end") | logBoth
+###exit 0
 # use this function like this:
 #    testImportantCondition || unlessForced || failAndExit
 function unlessForced {
    if [ "$force" == "yes" ]; then
-      reportLine "NOTICE: there were errors and the script was run with"
-      reportLine "        the force (-f) option to continue anyway."
-      reportLine "        Continued use of force may result in critical information"
-      reportLine "        not being audited which may hinder a future investigation."
+      logOnly "NOTICE: there were errors and the script was run with"
+      logOnly "        the force (-f) option to continue anyway."
+      logOnly "        Continued use of force may result in critical information"
+      logOnly "        not being audited which may hinder a future investigation."
       return 0
    fi
    return 1
@@ -241,7 +249,7 @@ function unlessForced {
 function getSudoOrExit {
    checkSudoPrivileges
    if [ $? -ne 0 ]; then
-      reportAndScreenLine "You have no sudo privileges, or don't know the password.  Exiting."
+      logBoth "You have no sudo privileges, or don't know the password.  Exiting."
       exit 1
    fi
 }
@@ -259,14 +267,14 @@ function getNewestReportDate {
    for report in $files; do
        tail -1 $report 2>&1 | grep --silent "Audit Review Complete"
        if [ $? -eq 0 ]; then
-           reportLine "Setting the audit start time from $report"
+           logOnly "Setting the audit start time from $report"
            fileDate=$(stat -c %Z $report) ; # time since change in epoch seconds
            auditDate=$(date -d @$fileDate +"$dateFormat")
            echo "$auditDate"
 	   return
        else
            :
-           #reportLine "Ignoring this report which never completed: $report"
+           #logOnly "Ignoring this report which never completed: $report"
        fi
    done
    #output nothing if no reports exist
@@ -300,14 +308,14 @@ function getScriptChecksum {
    if [ "$thisPath" == "." ]; then
       thisPath=$(pwd)
    fi
-   reportAndScreenLine "${LCYAN}This program:${NO_COLOUR}        ${thisPath}/$(basename $0)"
-   reportAndScreenLine "${LCYAN}This program checksum:${NO_COLOUR}     $cksum (SHA256)"
-   reportAndScreenLine "${LCYAN}This program lastmodified:${NO_COLOUR} $lastModified"
+   echo "${LCYAN}This program:${NO_COLOUR}        ${thisPath}/$(basename $0)"
+   echo "${LCYAN}This program checksum:${NO_COLOUR}     $cksum (SHA256)"
+   echo "${LCYAN}This program lastmodified:${NO_COLOUR} $lastModified"
 }
 
 function failAndExit {
-   reportAndScreenLine "[ERROR]: There were problems with the last command.  Exit code $?"
-   reportAndScreenLine "         The audit review is **NOT COMPLETE**.  Exiting."
+   logBoth "[ERROR]: There were problems with the last command.  Exit code $?"
+   logBoth "         The audit review is **NOT COMPLETE**.  Exiting."
    exit 1
 }
 
@@ -456,8 +464,8 @@ function reviewCdTools {
    filesToWatch=$(rpm -ql $mediaPackages | egrep -e "(/bin/|lib.*\.so)")
    if [ -n "$filesToWatch" ]; then
       actl=$(sudo auditctl -l)
-      reportLine          "Note:             this system has tools to build ISOs, so"
-      reportLine          "                  files could be exfiltrated this way as a bundle."
+      echo "Note:             this system has tools to build ISOs, so"
+      echo "                  files could be exfiltrated this way as a bundle."
       unauditedFiles=""
       for watch in $filesToWatch; do
          auditRuleCheckWatch "${actl}" $watch 
@@ -467,24 +475,31 @@ function reviewCdTools {
          fi
       done
       if [ -z "$unauditedfiles" ]; then
-         reportAndScreenLine "WARNING: Optical media or image generation tools are not fully audited."
+         echo "WARNING: Optical media or image generation tools are not fully audited."
          sampleFile="02-media.rules"      
          if [ -f $sampleFile ]; then /bin/rm $sampleFile; fi
          # meet 800-53r4/JSIG AU-2.a.9 - Audit and security relevant log data accesses
          echo "# === improve CNSS/JSIG AU-2.a.3 Export/Write to digital media " >> $sampleFile
          echo "# === improve CNSS/JSIG AU-2.a.4 Import from digital media" >> $sampleFile
 	 echo "$unauditedFiles">> $sampleFile
-         reportAndScreenLine "Suggestion:       create a watch on optical media tools "
-         reportAndScreenLine "                  by copying $sampleFile to /etc/audit.d/rules.d"
-         reportAndScreenLine "                     sudo mv $sampleFile /etc/audit/rules.d && \\"
-         reportAndScreenLine "                     sudo service auditd restart"
+         echo "Suggestion:       create a watch on optical media tools "
+         echo "                  by copying $sampleFile to /etc/audit.d/rules.d"
+         echo "                     sudo mv $sampleFile /etc/audit/rules.d && \\"
+         echo "                     sudo service auditd restart"
       fi
-      reportLine          "Here are all the times that an ISO creation/burning tool was called."
-      reportLine          "Note that if there is a warning above, then the audit rules are"
-      reportLine          "not fully covered by audit rules. Reporting on the use of"
-      reportLine          "$(echo "$filesToWatch" | wc -l) files on the watch list."
-      ausearchFileList $filesToWatch | AUSEARCH --format text | lpad | reportLine || failAndExit
    fi
+}
+
+# for all of the vendor-provided packages that can read or write to
+# media, report any time they were executed
+function reviewCdActivity {
+   mediaPackages=$(rpm -qa wodim genisoimage libisofs fuseiso)
+   filesToWatch=$(rpm -ql $mediaPackages | egrep -e "(/bin/|lib.*\.so)")
+   echo "Here are all the times that an ISO creation/burning tool was called."
+   echo "Note that if there is a warning above, then the audit rules are"
+   echo "not fully covered by audit rules. Reporting on the use of"
+   echo "$(echo "$filesToWatch" | wc -l) files on the watch list."
+   ausearchFileList $filesToWatch | AUSEARCH --format text
 }
 
 function daysBetween {
@@ -500,272 +515,276 @@ function daysBetween {
 ##############################################################################
 ##############################################################################
 ##############################################################################
-reportAndScreenLine "=================================================" 
-reportAndScreenLine "${LCYAN}Audit review of:${NO_COLOUR}     ${HOSTNAME} on $(date)" 
-reportAndScreenLine "${LCYAN}Review conducted by:${NO_COLOUR} ${ME}"
-reportAndScreenLine "${LCYAN}This report:${NO_COLOUR}         $reportFileOnly" 
+logBoth "=================================================" 
+logBoth "${LCYAN}Audit review of:${NO_COLOUR}     ${HOSTNAME} on $(date)" 
+logBoth "${LCYAN}Review conducted by:${NO_COLOUR} ${ME}"
+logBoth "${LCYAN}This report:${NO_COLOUR}         $reportFileOnly" 
 auditStart=$(getAuditStart)
 auditEnd=$(date +"%m/%d/%Y %H:%M:%S")
 archiveStart=$(getAuditStartFileSafe)
 daysAgo=$(daysBetween "$auditStart" "$auditEnd" )
 auditArchiveFile="$reportLocation/${HOSTNAME}-audit_archive-${archiveStart}_to_$(date +%Y%m%d_%H%M%S).log"
-reportAndScreenLine "${LCYAN}Earliest audit date:${NO_COLOUR} $auditStart ($daysAgo days ago)"
-reportAndScreenLine "${LCYAN}Latest audit date:${NO_COLOUR}   $auditEnd" 
-reportAndScreenLine "${LCYAN}Archive audit file:${NO_COLOUR}  $auditArchiveFile"
-getScriptChecksum
-reportAndScreenLine "=================================================" 
-sleep 1 
-set -x
-reportAndScreenLine "" 
-checkLoggedInAsRoot || unlessForced || failAndExit
-sleep 2
+logBoth "${LCYAN}Earliest audit date:${NO_COLOUR} $auditStart ($daysAgo days ago)"
+logBoth "${LCYAN}Latest audit date:${NO_COLOUR}   $auditEnd" 
+logBoth "${LCYAN}Archive audit file:${NO_COLOUR}  $auditArchiveFile"
+getScriptChecksum || logBoth
+logBoth "=================================================" 
+logBoth "" 
+checkLoggedInAsRoot | logBoth || unlessForced || failAndExit
 getSudoOrExit
-set +x
 auditDateOptions=" -ts $auditStart -te $auditEnd"
 commonAuditOptions=" $auditDateOptions -i"
 
-reportAndScreenLine "================================================="
-reportAndScreenLine "=== Quick audit configuration check "
-quickAuditCheck | lpad | reportLine || unlessForced || failAndExit
-checkAuditLogWatch | reportAndScreenLine || sleep 15
-checkAuditLogEnriched | reportAndScreenLine || unlessForced || failAndExit
-reportAndScreenLine "=== Quick audit configuration check complete "
-reportLine          "" 
+logBoth "================================================="
+logBoth "=== Quick audit configuration check "
+quickAuditCheck |lpad | logOnly|| unlessForced || failAndExit
+checkAuditLogWatch | lpad | logOnly|| sleep 15
+checkAuditLogEnriched | lpad | logOnly || unlessForced || failAndExit
+logBoth "=== Quick audit configuration check complete "
+logOnly "" 
 
-
-reportAndScreenLine "================================================="
-reportAndScreenLine "=== Archiving the audit records for integrity and to "
-reportAndScreenLine "===    only record one access while writing this report"
-AUSEARCH $auditDateOptions --raw > $auditArchiveFile
+logBoth "================================================="
+logBoth "=== Archiving the audit records for integrity and to "
+logBoth "===    only record one access while writing this report"
+AUSEARCH $auditDateOptions --raw > $auditArchiveFile 
 if [ $? -eq 0 ]; then
-   reportAndScreenLine "=== Archiving complete"
+   logBoth "=== Archiving complete"
    auditDateOptions="$auditDateOptions -if $auditArchiveFile"
    trap "echo \"Removing $auditArchiveFile on break\"; rm $auditArchiveFile; exit 2" 2 3 4 5 6 7 8 9 10 12 13 14
 else 
-   freeSpace=$(df -h --output=avail $(dirname $auditArchiveFile))
-   reportAndScreenLine "ERROR: Archiving FAILED.  Exiting. $freeSpace left in folder."
+   freeSpace=$(df -h --output=avail $(dirname $auditArchiveFile) | head -1 )
+   logBoth "ERROR: Archiving FAILED.  Exiting. $freeSpace left in folder."
    failAndExit 
 fi
 
-reportAndScreenLine "================================================="
-reportAndScreenLine "=== AUDIT REPORT: Summary "
-reportAndScreenLine "=== Description:  A brief overview of events "
-AUREPORT $commonAuditOptions | lpad | reportLine || failAndExit
-reportLine          "=== AUDIT REPORT: Summary " 
-reportLine          "" 
+logBoth "================================================="
+logBoth "=== AUDIT REPORT: Summary "
+logBoth "=== Description:  A brief overview of events "
+AUREPORT $commonAuditOptions | lpad | logOnly || failAndExit
+logOnly "=== AUDIT REPORT: Summary " 
+logOnly "" 
 
 
-reportAndScreenLine "=================================================" 
-reportAndScreenLine "=== AUDIT REPORT: Anomaly Events "
-reportAndScreenLine "=== Description:  Strange events that should rarely occur "
-AUREPORT   --anomaly $commonAuditOptions | lpad | reportLine || failAndExit
-reportLine          "=== AUDIT REPORT: Anomaly Events " 
-reportLine          "" 
+logBoth "=================================================" 
+logBoth "=== AUDIT REPORT: Anomaly Events "
+logBoth "=== Description:  Strange events that should rarely occur "
+AUREPORT --anomaly $commonAuditOptions | lpad | logOnly || failAndExit
+logOnly "=== AUDIT REPORT: Anomaly Events " 
+logOnly "" 
 
-reportAndScreenLine "=================================================" 
-reportAndScreenLine "=== AUDIT REPORT: User Authorizations (FAILED) "
-reportAndScreenLine "=== Description:  all events that show an account validation was"
-reportAndScreenLine "===               attempted, but failed"
-reportAndScreenLine "=== CNSS/JSIG:    AU-2.a.1.(1) Logons (Failure)"
-AUREPORT --auth --failed $commonAuditOptions | lpad | reportLine || failAndExit
-reportLine          "=== AUDIT REPORT: User Authorizations (FAILED)" 
-reportLine          "" 
+logBoth "=================================================" 
+logBoth "=== AUDIT REPORT: User Authorizations (FAILED) "
+logBoth "=== Description:  all events that show an account validation was"
+logBoth "===               attempted, but failed"
+logBoth "=== CNSS/JSIG:    AU-2.a.1.(1) Logons (Failure)"
+AUREPORT --auth --failed $commonAuditOptions | lpad | logOnly || failAndExit
+logOnly "=== AUDIT REPORT: User Authorizations (FAILED)" 
+logOnly "" 
 
-reportAndScreenLine "=================================================" 
-reportAndScreenLine "=== AUDIT REPORT: Login/Logout (SUCCESS)"
-reportAndScreenLine "=== Description:  All events that show an account validation was"
-reportAndScreenLine "===               attempted, and succeeded"
-reportAndScreenLine "=== Note:         An unsuccessful logout is one that was"
-reportAndScreenLine "===               forced during a reboot"
-reportAndScreenLine "=== CNSS/JSIG:    AU-2.a.1.(1) Logons (Success)"
-reportAndScreenLine "=== CNSS/JSIG:    AU-2.a.1.(2) Logouts (Success/Failure)"
-#AUREPORT --auth --success $commonAuditOptions | lpad | reportLine || failAndExit
-AUSEARCH $auditDateOptions --raw | aulast --stdin | lpad | reportLine || failAndExit
-reportLine          "=== AUDIT REPORT: Login/Logout (SUCCESS)" 
-reportLine          "" 
+logBoth "=================================================" 
+logBoth "=== AUDIT REPORT: Login/Logout (SUCCESS)"
+logBoth "=== Description:  All events that show an account validation was"
+logBoth "===               attempted, and succeeded"
+logBoth "=== Note:         An unsuccessful logout is one that was"
+logBoth "===               forced during a reboot"
+logBoth "=== CNSS/JSIG:    AU-2.a.1.(1) Logons (Success)"
+logBoth "=== CNSS/JSIG:    AU-2.a.1.(2) Logouts (Success/Failure)"
+AUSEARCH $auditDateOptions --raw | aulast --stdin | lpad | \
+      logOnly || failAndExit
+logOnly "=== AUDIT REPORT: Login/Logout (SUCCESS)" 
+logOnly "" 
 
-reportAndScreenLine "=================================================" 
-reportAndScreenLine "=== AUDIT REPORT: Digital Media (mount/unmount)"
-reportAndScreenLine "=== Description:  All events for portable media, be it"
-reportAndScreenLine "===               mount, unmount, read, or write"
-reportAndScreenLine "=== Note:         This audit requirement is difficult to"
-reportAndScreenLine "===               satisfy under Linux with the native audit"
-reportAndScreenLine "===               system.  If user-mountable drives are"
-reportAndScreenLine "===               configured, your administrator should have"
-reportAndScreenLine "===               auditd configured to watch those paths and"
-reportAndScreenLine "===               this script modified to support it."
-reportAndScreenLine "=== CNSS/JSIG:    AU-2.a.3 Export/Write to digital media [partial]" 
-reportAndScreenLine "=== CNSS/JSIG:    AU-2.a.4 Import from digital media [partial]" 
-reportLine          "Mounts of any filesystem"
-reportLine          "------------------------"
-AUSEARCH $auditDateOptions --format text --syscall mount| lpad | reportLine
-reportLine          "Unmounts of any filesystem (compare to list above)"
-reportLine          "--------------------------------------------------"
-AUSEARCH $auditDateOptions --format text --file /usr/bin/umount| lpad | reportLine
-reportLine          ""
-reportLine          "Note that no file read or device writing was audited on this system" 
-reportLine          "beyond that normally recorded everywhere on the system."
+logBoth "=================================================" 
+logBoth "=== AUDIT REPORT: Digital Media (mount/unmount)"
+logBoth "=== Description:  All events for portable media, be it"
+logBoth "===               mount, unmount, read, or write"
+logBoth "=== Note:         This audit requirement is difficult to"
+logBoth "===               satisfy under Linux with the native audit"
+logBoth "===               system.  If user-mountable drives are"
+logBoth "===               configured, your administrator should have"
+logBoth "===               auditd configured to watch those paths and"
+logBoth "===               this script modified to support it."
+logBoth "=== CNSS/JSIG:    AU-2.a.3 Export/Write to digital media [partial]" 
+logBoth "=== CNSS/JSIG:    AU-2.a.4 Import from digital media [partial]" 
+logOnly "Mounts of any filesystem"
+logOnly "------------------------"
+AUSEARCH $auditDateOptions --format text --syscall mount| lpad | logOnly
+logOnly "Unmounts of any filesystem (compare to list above)"
+logOnly "--------------------------------------------------"
+AUSEARCH $auditDateOptions --format text --file /usr/bin/umount| \
+      lpad | logOnly
+logOnly ""
+logOnly "Note that no file read or device writing was audited on this system" 
+logOnly "beyond that normally recorded everywhere on the system."
 ### if these RPMs are installed, recommend that audit rules be put in place
 ### if they aren't
-reviewCdTools
-echo "GlobalErrors=$GlobalErrors  GlobalWarnings=$GlobalWarnings"
-reportAndScreenLine "=== AUDIT REPORT: Digital Media (mount/unmount)"
-reportLine          "" 
+reviewCdTools | lpad | logBoth  || failAndExit
+reviewCdActivity | lpad | logOnly  || failAndExit
+logBoth "=== AUDIT REPORT: Digital Media (mount/unmount)"
+logOnly "" 
 
-reportAndScreenLine "=================================================" 
-reportAndScreenLine "=== AUDIT REPORT: Local account management"
-reportAndScreenLine "=== Description:  Users and groups added, deleted, or"
-reportAndScreenLine "===               modified (Success/Failure)"
-reportAndScreenLine "=== CNSS/JSIG:    AU-2.a.5.(1) User add, delete, modify, disable (Success/Failure)" 
-reportAndScreenLine "=== CNSS/JSIG:    AU-2.a.5.(2) Group add, delete, modify, disable (Success/Failure)" 
-AUREPORT --mods $commonAuditOptions | lpad | reportLine || failAndExit
-reportLine          "=== AUDIT REPORT: Local account management" 
-reportLine          "" 
+logBoth "=================================================" 
+logBoth "=== AUDIT REPORT: Local account management"
+logBoth "=== Description:  Users and groups added, deleted, or"
+logBoth "===               modified (Success/Failure)"
+logBoth "=== CNSS/JSIG:    AU-2.a.5.(1) User add, delete, modify, disable (Success/Failure)" 
+logBoth "=== CNSS/JSIG:    AU-2.a.5.(2) Group add, delete, modify, disable (Success/Failure)" 
+AUREPORT --mods $commonAuditOptions | lpad | logOnly || failAndExit
+logOnly "=== AUDIT REPORT: Local account management" 
+logOnly "" 
 
-reportAndScreenLine "=================================================" 
-reportAndScreenLine "=== AUDIT REPORT: Configuration Changes (FAILED)"
-reportAndScreenLine "=== Description:  Failed attempts to change files called out"
-reportAndScreenLine "===               in the audit configuration"
-reportAndScreenLine "=== CNSS/JSIG:    AU-2.a.6.(1) Security or audit policy changes (Failure)" 
-reportAndScreenLine "=== CNSS/JSIG:    AU-2.a.6.(2) Configuration changes (Failure)" 
-AUREPORT --config --failed $commonAuditOptions | lpad | reportLine || failAndExit
-reportLine          "=== AUDIT REPORT: Configuration Changes (FAILED)"
-reportLine          "" 
+logBoth "=================================================" 
+logBoth "=== AUDIT REPORT: Configuration Changes (FAILED)"
+logBoth "=== Description:  Failed attempts to change files called out"
+logBoth "===               in the audit configuration"
+logBoth "=== CNSS/JSIG:    AU-2.a.6.(1) Security or audit policy changes (Failure)" 
+logBoth "=== CNSS/JSIG:    AU-2.a.6.(2) Configuration changes (Failure)" 
+AUREPORT --config --failed $commonAuditOptions | lpad | logOnly || failAndExit
+logOnly "=== AUDIT REPORT: Configuration Changes (FAILED)"
+logOnly "" 
 
-reportAndScreenLine "=================================================" 
-reportAndScreenLine "=== AUDIT REPORT: Configuration Changes (SUCCESS)"
-reportAndScreenLine "=== Description:  Successful changes made to files called out"
-reportAndScreenLine "===               in the audit configuration"
-reportAndScreenLine "=== CNSS/JSIG:    AU-2.a.6.(1) Security or audit policy changes (Success)" 
-reportAndScreenLine "=== CNSS/JSIG:    AU-2.a.6.(2) Configuration changes (Success)" 
-AUREPORT --config --success$commonAuditOptions | lpad | reportLine || failAndExit
-reportLine          "=== AUDIT REPORT: Configuration Changes (SUCCESS)"
-reportLine          "" 
+logBoth "=================================================" 
+logBoth "=== AUDIT REPORT: Configuration Changes (SUCCESS)"
+logBoth "=== Description:  Successful changes made to files called out"
+logBoth "===               in the audit configuration"
+logBoth "=== CNSS/JSIG:    AU-2.a.6.(1) Security or audit policy changes (Success)" 
+logBoth "=== CNSS/JSIG:    AU-2.a.6.(2) Configuration changes (Success)" 
+AUREPORT --config --success$commonAuditOptions | lpad | logOnly || failAndExit
+logOnly "=== AUDIT REPORT: Configuration Changes (SUCCESS)"
+logOnly "" 
 
-reportAndScreenLine "=================================================" 
-reportAndScreenLine "=== AUDIT REPORT: Login directly as root"
-reportAndScreenLine "=== Description:  Detect when someone logs into the "
-reportAndScreenLine "===               system as root (Success/Failure)"
-reportAndScreenLine "=== CNSS/JSIG:    AU-2.a.7 Admin or root-level access (Success/Failure)" 
+logBoth "=================================================" 
+logBoth "=== AUDIT REPORT: Login directly as root"
+logBoth "=== Description:  Detect when someone logs into the "
+logBoth "===               system as root (Success/Failure)"
+logBoth "=== CNSS/JSIG:    AU-2.a.7 Admin or root-level access (Success/Failure)" 
 uid0Users=$(awk 'BEGIN{FS=":"} $3 == "0" {print $1}' /etc/passwd)
 if [ "$uid0Users" != "root" ]; then
-   reportAndScreenLine "=== WARNING: UID 0 resolves to users other than \"root\": $(echo $uid0Users) "
-   reportAndScreenLine "===          This script only checks for the \"root\" user."
+   logBoth "=== WARNING: UID 0 resolves to users other than \"root\": $(echo $uid0Users) "
+   logBoth "===          This script only checks for the \"root\" user."
 fi
-AUREPORT --login $commonAuditOptions | awk 'NR<6 {print} NR>1 && / root .*tty/ { print }' \
-		| lpad | reportLine || failAndExit
-reportLine          "=== AUDIT REPORT: Login directly as root" 
-reportLine          "" 
+AUREPORT --login $commonAuditOptions | \
+      awk 'NR<6 {print} NR>1 && / root .*tty/ { print }' \
+		| lpad | logOnly || failAndExit
+logOnly "=== AUDIT REPORT: Login directly as root" 
+logOnly "" 
 
-reportAndScreenLine "=================================================" 
-reportAndScreenLine "=== AUDIT REPORT: Privilege/role escalation"
-reportAndScreenLine "=== Description:  Commands run by a user when they"
-reportAndScreenLine "===               have taken on privileges"
-reportAndScreenLine "=== Note:         Noisy commands issued during login are filtered out"
-reportAndScreenLine "=== CNSS/JSIG:    AU-2.a.8 Privilege/role escalation (Success/Failure)" 
+logBoth "=================================================" 
+logBoth "=== AUDIT REPORT: Privilege/role escalation"
+logBoth "=== Description:  Commands run by a user when they"
+logBoth "===               have taken on privileges"
+logBoth "=== Note:         Noisy commands issued during login are filtered out"
+logBoth "=== CNSS/JSIG:    AU-2.a.8 Privilege/role escalation (Success/Failure)" 
 AUREPORT --key privileged $commonAuditOptions --format text | \
-		grep -v ' root, successfully executed /usr/sbin/unix_chkpwd' | \
-		reportLine || failAndExit
-reportLine          "=== AUDIT REPORT: Privilege/role escalation"
-reportLine          "" 
+		grep -v ' root, successfully executed /usr/sbin/unix_chkpwd'  \
+		| logOnly || failAndExit
+logOnly "=== AUDIT REPORT: Privilege/role escalation"
+logOnly "" 
 
-reportAndScreenLine "=================================================" 
-reportAndScreenLine "=== AUDIT REPORT: Security relevant log data access (FAILURE)"
-reportAndScreenLine "=== Description:  Report failed attempts to read the"
-reportAndScreenLine "===               the audit log or the security log"
-reportAndScreenLine "=== CNSS/JSIG:    AU-2.a.9 Audit and security relevant log data access (Failure)" 
-AUSEARCH  --success no $auditDateOptions --file /var/log/audit --file /var/log |\
-		 reportLine || failAndExit
-reportLine          "=== AUDIT REPORT: Security log data access"
-reportLine          "" 
+logBoth "=================================================" 
+logBoth "=== AUDIT REPORT: Security relevant log data access (FAILURE)"
+logBoth "=== Description:  Report failed attempts to read the"
+logBoth "===               the audit log or the security log"
+logBoth "=== CNSS/JSIG:    AU-2.a.9 Audit and security relevant log data access (Failure)" 
+AUSEARCH  --success no $auditDateOptions --file /var/log/audit \
+         --file /var/log |\
+		logOnly || failAndExit
+logOnly "=== AUDIT REPORT: Security log data access"
+logOnly "" 
 
-reportAndScreenLine "=================================================" 
-reportAndScreenLine "=== AUDIT REPORT: Security relevant log data access (SUCCESS)"
-reportAndScreenLine "=== Description:  "
-reportAndScreenLine "=== CNSS/JSIG:    AU-2.a.9 Audit and security relevant log data access (Success/Failure)" 
-AUSEARCH  --success yes $auditDateOptions --file /var/log/audit --file /var/log | lpad | reportLine || failAndExit
-reportLine          "=== AUDIT REPORT: Security log data access"
-reportLine          "" 
+logBoth "=================================================" 
+logBoth "=== AUDIT REPORT: Security relevant log data access (SUCCESS)"
+logBoth "=== Description:  "
+logBoth "=== CNSS/JSIG:    AU-2.a.9 Audit and security relevant log data access (Success/Failure)" 
+AUSEARCH  --success yes $auditDateOptions --file /var/log/audit \
+        --file /var/log | lpad | logOnly || failAndExit
+logOnly "=== AUDIT REPORT: Security log data access"
+logOnly "" 
 
-reportAndScreenLine "=================================================" 
-reportAndScreenLine "=== AUDIT REPORT: System start/shutdown"
-reportAndScreenLine "=== Description:  Show the system booting, controlled shutdowns,"
-reportAndScreenLine "===               runlevel changes (anything other than runlevel-3"
-reportAndScreenLine "===               means that problems happened during boot),"
-reportAndScreenLine "===               and audit daemon start/stop/reconfigure"
-reportAndScreenLine "=== CNSS/JSIG:    AU-2.a.10 System reboot, restart and shutdown (Success/Failure)" 
-AUSEARCH $auditDateOptions -m SYSTEM_BOOT -m SYSTEM_SHUTDOWN -m SYSTEM_RUNLEVEL \
-		-m DAEMON_START -m DAEMON_END -m DAEMON_CONFIG --format text | \
-		reportLine || failAndExit
-reportLine          "=== AUDIT REPORT: System start/shutdown "
-reportLine          "" 
+logBoth "=================================================" 
+logBoth "=== AUDIT REPORT: System start/shutdown"
+logBoth "=== Description:  Show the system booting, controlled shutdowns,"
+logBoth "===               runlevel changes (anything other than runlevel-3"
+logBoth "===               means that problems happened during boot),"
+logBoth "===               and audit daemon start/stop/reconfigure"
+logBoth "=== CNSS/JSIG:    AU-2.a.10 System reboot, restart and shutdown (Success/Failure)" 
+AUSEARCH $auditDateOptions -m SYSTEM_BOOT -m SYSTEM_SHUTDOWN \
+                -m SYSTEM_RUNLEVEL -m DAEMON_START -m DAEMON_END \
+                -m DAEMON_CONFIG --format text | \
+		logOnly || failAndExit
+logOnly "=== AUDIT REPORT: System start/shutdown "
+logOnly "" 
 
 printSubsystemInstalled="no"
 if [ -n "$(which lpq 2>/dev/null)" -o -n "$(which lpstat 2>/dev/null)" ]; then
    printSubsystemInstalled="yes"
 fi
-reportAndScreenLine "=================================================" 
-reportAndScreenLine "=== AUDIT REPORT: Print to a device or file:"
-reportAndScreenLine "=== Description:  If printing is installed on this system,"
-reportAndScreenLine "===               show something, but that code has not"
-reportAndScreenLine "===               been writte yet.  See this page for ideas:"
-reportAndScreenLine "===               https://www.cups.org/doc/accounting.html"
-reportAndScreenLine "=== CNSS/JSIG:    AU-2.a.11 Print to a device (Success/Failure)" 
-reportAndScreenLine "=== CNSS/JSIG:    AU-2.a.12 Print to a file (Success/Failure)" 
+logBoth "=================================================" 
+logBoth "=== AUDIT REPORT: Print to a device or file:"
+logBoth "=== Description:  If printing is installed on this system,"
+logBoth "===               show something, but that code has not"
+logBoth "===               been writte yet.  See this page for ideas:"
+logBoth "===               https://www.cups.org/doc/accounting.html"
+logBoth "=== CNSS/JSIG:    AU-2.a.11 Print to a device (Success/Failure)" 
+logBoth "=== CNSS/JSIG:    AU-2.a.12 Print to a file (Success/Failure)" 
 if [ "$printSubsystemInstalled" == "no" ]; then
-   reportAndScreenLine "=== Note:         You're in luck.  No printers are configured."
-   reportAndScreenLine "===               There is nothing to audit."
+   logBoth "=== Note:         You're in luck.  No printers are configured."
+   logBoth "===               There is nothing to audit."
 else
-   reportAndScreenLine "=== WARNING: Not implemented yet"
+   logBoth "=== WARNING: Not implemented yet"
 fi
 
-reportAndScreenLine "=================================================" 
-reportAndScreenLine "=== AUDIT REPORT: Commands Run"
-reportAndScreenLine "=== Description:  STIG-identified commands that should be reviewed"
-reportAndScreenLine "===               Filters are applied to remove systemd activity"
-reportAndScreenLine "=== CNSS/JSIG:    AU-2.a.13 Application Initialization (Success/Failure)"
-AUREPORT --comm $commonAuditOptions |egrep -v -e '(\(none\)|\? \?| abrt-cli | unix_chkpwd )'\
-		| lpad | reportLine || failAndExit
-reportLine          "=== AUDIT REPORT: Commands Run" 
-reportAndScreenLine "=================================================" 
-reportLine          "" 
+logBoth "=================================================" 
+logBoth "=== AUDIT REPORT: Commands Run"
+logBoth "=== Description:  STIG-identified commands that should be reviewed"
+logBoth "===               Filters are applied to remove systemd activity"
+logBoth "=== CNSS/JSIG:    AU-2.a.13 Application Initialization (Success/Failure)"
+AUREPORT --comm $commonAuditOptions |\
+       egrep -v -e '(\(none\)|\? \?| abrt-cli | unix_chkpwd )'\
+		| lpad | logOnly || failAndExit
+logOnly "=== AUDIT REPORT: Commands Run" 
+logBoth "=================================================" 
+logOnly "" 
 
-reportAndScreenLine "=== CLEANING UP ==="
-reportAndScreenLine "=== Compressing the extracted audit records"
+logBoth "=== CLEANING UP ==="
+logBoth "=== Compressing the extracted audit records"
 gzip $auditArchiveFile
 
 finalColor=${GREEN}
-reportAndScreenLine "=== Counting up any errors or warnings"
-echo "GlobalErrors=$GlobalErrors  GlobalWarnings=$GlobalWarnings"
+logBoth "=== Counting up any errors or warnings"
+GlobalErrors=$(grep "ERROR" $reportFile | wc -l)
+GlobalWarnings=$(grep "WARNING" $reportFile | wc -l)
 if [ $GlobalErrors -ne 0 ]; then
-   reportAndScreenLine "ALERT!  There were $GlobalErrors errors throughout this report."
-   reportAndScreenLine "        This audit report is likely incomplete."
-   reportAndScreenLine "        Failure to address these concerns will be noted"
-   reportAndScreenLine "        during any incident response reviews."
+   logBoth "ALERT!  There were $GlobalErrors errors throughout this report."
+   logBoth "        This audit report is likely incomplete."
+   logBoth "        Failure to address these concerns will be noted"
+   logBoth "        during any incident response reviews."
    finalColor=${RED}
 fi
 if [ $GlobalWarnings -ne 0 ]; then
-   reportAndScreenLine "NOTICE! Important warnings occurred while generating"
-   reportAndScreenLine "        This report.  Please investigate."
+   logBoth "NOTICE! Important warnings occurred while generating"
+   logBoth "        This report.  Please investigate."
    finalColor=${YELLOW}
 fi
 
-reportAndScreenLine "=== Advise the auditor on next steps"
-echo "Now that the audit review is complete, feel free to force "
-echo "a log rotation with"
-echo "   sudo service auditd rotate"
-echo "Review this report with"      
-echo "   more $reportFile" 
-echo "Archive the report and the original logs stored in"
-echo "   $auditArchiveFile.gz"
+logBoth "=== Advise the auditor on next steps"
+logBoth "Now that the audit review is complete, feel free to force "
+logBoth "a log rotation with"
+logBoth "   sudo service auditd rotate"
+logBoth "Review this report with"      
+logBoth "   more $reportFile" 
+logBoth "Archive the report and the original logs stored in"
+logBoth "   $auditArchiveFile.gz"
 if [ -n "$offlineArchiveFolder" -a -d "$offlineArchiveFolder" ] ; then
-   echo ">>> Copying the report and archival copy of the supporting logs to"
-   echo ">>> $offlineArchiveFolder"
-   cp $reportFile $auditArchiveFile.gz $offlineArchiveFolder/. || failAndExit
-   echo ">>> ${GREEN}Report archived${NO_COLOUR}"
+   logBoth ">>> Copying the report and archival copy of the supporting logs to"
+   logBoth ">>> $offlineArchiveFolder"
+   logOnly "${finalColor}=+=+=+=+=+=+=+=+ Audit Review Complete =+=+=+=+=+=+=+=+=+=${NO_COLOUR}"
+   cp -v $reportFile $auditArchiveFile.gz $offlineArchiveFolder/. 2>&1 | \
+         logOnly || failAndExit
+   logBoth ">>> ${GREEN}Report archived${NO_COLOUR}"
 fi
-reportAndScreenLine "=== CLEAN UP COMPLETE ==="
-reportAndScreenLine "${finalColor}=+=+=+=+=+=+=+=+ Audit Review Complete =+=+=+=+=+=+=+=+=+=${NO_COLOUR}"
+logBoth "=== CLEAN UP COMPLETE ==="
+logBoth "${finalColor}=+=+=+=+=+=+=+=+ Audit Review Complete =+=+=+=+=+=+=+=+=+=${NO_COLOUR}"
 
 
 ##### UNCLASSIFIED ##########
