@@ -44,6 +44,28 @@ This program is archived at https://gitlab.ext.rdte.afrl.af.mil/toddch/linux-aud
    - Secure copy (`scp`) to another Unix/Linux host
    - Secure copy from another system (e.g. WinSCP on Windows)
 
+### Bonus scripts
+A few additional files are present to improve future integration into
+a larger log reduction system.
+
+#### `continuous_audit_to_syslog`
+A small shell script to continuously watch the audit log and to provide
+near real-time translations into English that are then injected
+back into the system logger.  It follows rotations and only opens the
+audit.log file at startup or whenever it rotates.  This provides some
+nice context for audit records to other system events rather than the 
+mysterious four-line records that are difficult to read.
+
+###  `continuous_audit_to_syslog.service`
+A systemd service definition for the `continuous_audit_to_syslog` that
+can be installed and started with `install.sh`
+
+###  `install.sh`
+Install the systemd services defined in this script.  Registers and
+starts the service.  The scripts behind the service definition are
+installed into `/root`.  See the above list for specific services
+supported.
+
 ## Sample Run
 
 ### Start up
@@ -107,7 +129,7 @@ leverage the existing anlysis tools that come with Linux.
 === AUDIT REPORT: Anomaly Events
 === Description:  Strange events that should rarely occur
 === AUDIT REPORT: Anomaly Events
-
+```
 ### CNSS/JSIG Specific Audit Reviews
 A full report is then run which goes through the requirements
 one by one so that the auditor can be assured that they
@@ -183,3 +205,21 @@ via sudo.  All sudo access inside the `linux_audit_reporting` script is one of t
 
 No effort has been made to provide a very restricted sudo configuration
 as would be needed to satisfy AC-6, "Least Privilege".
+
+Also, if the script detects configuration deficiencies, fixes are presented
+to the auditor.  On a system with restrictive sudo rules, the 
+system administrator should take the recommended changes and incorporate
+them into the system baseline.
+
+### Recommended Audit Changes
+
+During script execution, some audit rule definition changes may be made
+if it some CNSS or JSIG requirements aren't being met.
+
+### `01-security_log.rules`
+Record reads on key security log files as needed by AU-2.a.9
+
+### `02-media.rules`
+Record execution of binaries or libraries that come with the system
+and provide media reading or ISO generation, in support of AU-2.a.3 
+and AU-2.a.4.
