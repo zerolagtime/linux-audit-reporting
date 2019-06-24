@@ -162,16 +162,29 @@ function AUSEARCH {
 }
 
 function lpad {
-   cat | sed -e 's/^/    /'
+   sed -e 's/^/    /g'
 }
-# log the message passed on the command line
+
+function colorizeAlerts {
+set +x
+   awk -v CYAN=${CYAN} -v RED=${RED} -v NC=${NO_COLOUR} \
+         -v BRED=${BRED} '
+       /^=======/ { print CYAN $0 NC; next }
+       /WARNING/ { print RED $0 NC; next }
+       /ERROR/   { print BRED $0 NC; next }
+       { print $0 }
+   '
+}
+
+
+function stripColors {
+   sed -e 's/\x1b\[[^m]*m//g;' 
+}
+
+# log the message passed on the command line or piped in
 # use -v to put a copy on the screen.  
-# use -f to put a copy to a file
-# use -p to padd four spaces on the left
-# use -e to treat the message as a command line we need to execute
-# provide neither and nothing happens with the log
-# provide both and the user sees what is logged
-function oopsChecker {
+# please use the wrapper logOnly or logBoth so that code blocks are clear
+function colorizeLog {
    toScreen=0
    # who knew that overriding IFS on one line would persist across
    # the script and mess up parameter separation on $* arguments to functions
@@ -180,59 +193,66 @@ function oopsChecker {
       toScreen=1
       shift 1
    fi
-   declare -a lines; 
+   # two paths 
    if [ $# -gt 0 ]; then
-      IFS=$'\n' lines=($*); 
-   else
-      IFS=$'\n' lines=( $(cat) ); 
-   fi
-   for idx in ${!lines[@]}; do 
-      msg="${lines[$idx]}"; 
+      # first is if the message came in on the command line
+      msg="$*"
       if [ $toScreen -eq 1 ] ; then
-         echo "$msg" | awk -v CYAN=${CYAN} -v RED=${RED} -v NC=${NO_COLOUR} \
-               -v BRED=${BRED} '
-             /^=====/ { print CYAN $0 NC; next }
-             /WARNING/ { print RED $0 NC; next }
-             /ERROR/   { print BRED $0 NC; next }
-             { print $0 }
-            '
+         echo "$msg" | colorizeAlerts
+      else
+         if [[ "$msg" == *"ERROR"* ]]; then
+	    echo " ALERT!  An ERROR occurred.  Check the log for details." |\
+	       colorizeAlerts
+	 elif [[ "$msg" == *"WARNING"* ]]; then
+	    echo " NOTICE!  A WARNING occurred.  Check the log for details." |\
+	       colorizeAlerts
+	 fi
       fi
-      # strip all colouring out of the text report since it is terminal
-      # friendly only
-      echo "$msg" | sed -e 's/\x1b\[[^m]*m//g;' >> $reportFile
-   done
-   IFS=$oldIFS
+      echo "$msg" | stripColors >> $reportFile 
+   else 
+      # second is the message is piped in
+      # trick - without the 'IFS="";' bit, leading spaces are trimmed
+      #         which zero's out the lpad function
+      newline=$(echo)
+      while IFS="";read -r line; do
+         # but we need to trim the newline now...
+         msg=${line/$newline/} 
+         if [ $toScreen -eq 1 ] ; then
+            echo "$msg" | colorizeAlerts
+         else
+            if [[ "$msg" == *"ERROR"* ]]; then
+   	       echo " ALERT!  An ERROR occurred.  Check the log for details." |\
+	          colorizeAlerts
+   	    elif [[ "$msg" == *"WARNING"* ]]; then
+   	       echo " NOTICE!  A WARNING occurred.  Check the log for details." |\
+	          colorizeAlerts
+   	    fi
+         fi
+         echo "$msg" | stripColors >> $reportFile 
+      done
+   fi
    return 0
 }
 
-# Write output to the screen and a logfile
+# dump a message only to the log file
+# you can pass a message on the command line or pipe in multiple lines of text
 function logOnly {
    if [ $# -gt 0 ]; then
-      oopsChecker "$*" 
+      colorizeLog "$*" 
    else
-      oopsChecker 
+      colorizeLog 
    fi
 }
 
+# dump a message to the screen and log file
+# you can pass a message on the command line or pipe in multiple lines of text
 function logBoth {
-   stderr "logBoth got $# parameters"
    if [ $# -gt 0 ]; then
-      oopsChecker -v "$*" 
+      colorizeLog -v "$*" 
    else
-      oopsChecker -v
+      colorizeLog -v
    fi
 }
-###stderr ">>> basic"
-###logBoth "===="
-###stderr ">>> colored"
-###logBoth "WARNING message"
-###stderr ">>> blank line"
-###logBoth ""
-###stderr ">>> pipe"
-###/bin/ls -1 | logBoth
-###stderr ">>> pipe with blank lines"
-###(echo "line 1, then blank"; echo ""; echo "line 2 end") | logBoth
-###exit 0
 # use this function like this:
 #    testImportantCondition || unlessForced || failAndExit
 function unlessForced {
@@ -495,7 +515,7 @@ function reviewCdTools {
 function reviewCdActivity {
    mediaPackages=$(rpm -qa wodim genisoimage libisofs fuseiso)
    filesToWatch=$(rpm -ql $mediaPackages | egrep -e "(/bin/|lib.*\.so)")
-   echo "Here are all the times that an ISO creation/burning tool was called."
+   echo "=== ISO creation/burning tool usage"
    echo "Note that if there is a warning above, then the audit rules are"
    echo "not fully covered by audit rules. Reporting on the use of"
    echo "$(echo "$filesToWatch" | wc -l) files on the watch list."
@@ -527,7 +547,7 @@ auditArchiveFile="$reportLocation/${HOSTNAME}-audit_archive-${archiveStart}_to_$
 logBoth "${LCYAN}Earliest audit date:${NO_COLOUR} $auditStart ($daysAgo days ago)"
 logBoth "${LCYAN}Latest audit date:${NO_COLOUR}   $auditEnd" 
 logBoth "${LCYAN}Archive audit file:${NO_COLOUR}  $auditArchiveFile"
-getScriptChecksum || logBoth
+getScriptChecksum | logBoth
 logBoth "=================================================" 
 logBoth "" 
 checkLoggedInAsRoot | logBoth || unlessForced || failAndExit
@@ -538,7 +558,7 @@ commonAuditOptions=" $auditDateOptions -i"
 logBoth "================================================="
 logBoth "=== Quick audit configuration check "
 quickAuditCheck |lpad | logOnly|| unlessForced || failAndExit
-checkAuditLogWatch | lpad | logOnly|| sleep 15
+checkAuditLogWatch | lpad | logOnly|| slee 15
 checkAuditLogEnriched | lpad | logOnly || unlessForced || failAndExit
 logBoth "=== Quick audit configuration check complete "
 logOnly "" 
@@ -560,7 +580,7 @@ fi
 logBoth "================================================="
 logBoth "=== AUDIT REPORT: Summary "
 logBoth "=== Description:  A brief overview of events "
-AUREPORT $commonAuditOptions | lpad | logOnly || failAndExit
+AUREPORT $commonAuditOptions 2>&1 | lpad | logOnly || failAndExit
 logOnly "=== AUDIT REPORT: Summary " 
 logOnly "" 
 
@@ -568,7 +588,7 @@ logOnly ""
 logBoth "=================================================" 
 logBoth "=== AUDIT REPORT: Anomaly Events "
 logBoth "=== Description:  Strange events that should rarely occur "
-AUREPORT --anomaly $commonAuditOptions | lpad | logOnly || failAndExit
+AUREPORT --anomaly $commonAuditOptions  2>&1 | lpad | logOnly || failAndExit
 logOnly "=== AUDIT REPORT: Anomaly Events " 
 logOnly "" 
 
@@ -577,7 +597,7 @@ logBoth "=== AUDIT REPORT: User Authorizations (FAILED) "
 logBoth "=== Description:  all events that show an account validation was"
 logBoth "===               attempted, but failed"
 logBoth "=== CNSS/JSIG:    AU-2.a.1.(1) Logons (Failure)"
-AUREPORT --auth --failed $commonAuditOptions | lpad | logOnly || failAndExit
+AUREPORT --auth --failed $commonAuditOptions 2>&1  | lpad | logOnly || failAndExit
 logOnly "=== AUDIT REPORT: User Authorizations (FAILED)" 
 logOnly "" 
 
@@ -589,7 +609,7 @@ logBoth "=== Note:         An unsuccessful logout is one that was"
 logBoth "===               forced during a reboot"
 logBoth "=== CNSS/JSIG:    AU-2.a.1.(1) Logons (Success)"
 logBoth "=== CNSS/JSIG:    AU-2.a.1.(2) Logouts (Success/Failure)"
-AUSEARCH $auditDateOptions --raw | aulast --stdin | lpad | \
+AUSEARCH $auditDateOptions --raw | aulast --stdin 2>&1 | lpad | \
       logOnly || failAndExit
 logOnly "=== AUDIT REPORT: Login/Logout (SUCCESS)" 
 logOnly "" 
@@ -608,18 +628,19 @@ logBoth "=== CNSS/JSIG:    AU-2.a.3 Export/Write to digital media [partial]"
 logBoth "=== CNSS/JSIG:    AU-2.a.4 Import from digital media [partial]" 
 logOnly "Mounts of any filesystem"
 logOnly "------------------------"
-AUSEARCH $auditDateOptions --format text --syscall mount| lpad | logOnly
+AUSEARCH $auditDateOptions --format text --syscall mount 2>&1 | lpad | logOnly
 logOnly "Unmounts of any filesystem (compare to list above)"
 logOnly "--------------------------------------------------"
-AUSEARCH $auditDateOptions --format text --file /usr/bin/umount| \
+AUSEARCH $auditDateOptions --format text --file /usr/bin/umount 2>&1 | \
       lpad | logOnly
 logOnly ""
-logOnly "Note that no file read or device writing was audited on this system" 
-logOnly "beyond that normally recorded everywhere on the system."
+logOnly "    Note:         No file read or device writing was audited on"
+logOnly "                  this system, beyond that normal failures recorded"
+logOnly "                  everywhere else on the system."
 ### if these RPMs are installed, recommend that audit rules be put in place
 ### if they aren't
 reviewCdTools | lpad | logBoth  || failAndExit
-reviewCdActivity | lpad | logOnly  || failAndExit
+reviewCdActivity 2>&1 | lpad | logOnly  || failAndExit
 logBoth "=== AUDIT REPORT: Digital Media (mount/unmount)"
 logOnly "" 
 
@@ -675,7 +696,7 @@ logBoth "=== Description:  Commands run by a user when they"
 logBoth "===               have taken on privileges"
 logBoth "=== Note:         Noisy commands issued during login are filtered out"
 logBoth "=== CNSS/JSIG:    AU-2.a.8 Privilege/role escalation (Success/Failure)" 
-AUREPORT --key privileged $commonAuditOptions --format text | \
+AUSEARCH --key privileged $auditDateOptions --format text | \
 		grep -v ' root, successfully executed /usr/sbin/unix_chkpwd'  \
 		| logOnly || failAndExit
 logOnly "=== AUDIT REPORT: Privilege/role escalation"
@@ -746,6 +767,7 @@ logOnly "=== AUDIT REPORT: Commands Run"
 logBoth "=================================================" 
 logOnly "" 
 
+logBoth "=================================================" 
 logBoth "=== CLEANING UP ==="
 logBoth "=== Compressing the extracted audit records"
 gzip $auditArchiveFile
@@ -767,14 +789,15 @@ if [ $GlobalWarnings -ne 0 ]; then
    finalColor=${YELLOW}
 fi
 
-logBoth "=== Advise the auditor on next steps"
-logBoth "Now that the audit review is complete, feel free to force "
-logBoth "a log rotation with"
-logBoth "   sudo service auditd rotate"
-logBoth "Review this report with"      
-logBoth "   more $reportFile" 
-logBoth "Archive the report and the original logs stored in"
-logBoth "   $auditArchiveFile.gz"
+logBoth "=== Next Steps"
+logBoth "    Now that the audit review is complete, feel free to force "
+logBoth "    a log rotation with"
+logBoth "       sudo service auditd rotate"
+logBoth "    Review this report with"      
+logBoth "       more $reportFile" 
+logBoth "    Archive the report and the original logs"
+logBoth "       $reportFile"
+logBoth "       $auditArchiveFile.gz"
 if [ -n "$offlineArchiveFolder" -a -d "$offlineArchiveFolder" ] ; then
    logBoth ">>> Copying the report and archival copy of the supporting logs to"
    logBoth ">>> $offlineArchiveFolder"
