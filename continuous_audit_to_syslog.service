@@ -2,7 +2,7 @@
 Description=Translate auditd events to syslog
 After=rsyslog.service
 After=auditd.service
-StartLimitIntervalSec=0
+; StartLimitIntervalSec=0
 
 [Service]
 Type=simple
