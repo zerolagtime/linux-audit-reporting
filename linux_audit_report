@@ -15,7 +15,7 @@
 #   in the same folder, then this audit review will be set to start from
 #   the moment that last report was first started.  This should provide
 #   continuous coverage in the event that an irregular schedule is followed.
-LAR_VERSION="1.0"
+LAR_VERSION="1.0.1"
 reportFileOnly="$(date +%Y%m%d_%H%M%S)-${HOSTNAME/\.*/}-audit_report.txt"
 reportLocation="$(dirname $0)/archive"
 reportFile="$reportLocation/$reportFileOnly"
