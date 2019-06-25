@@ -558,7 +558,7 @@ commonAuditOptions=" $auditDateOptions -i"
 logBoth "================================================="
 logBoth "=== Quick audit configuration check "
 quickAuditCheck |lpad | logOnly|| unlessForced || failAndExit
-checkAuditLogWatch | lpad | logOnly|| slee 15
+checkAuditLogWatch | lpad | logOnly|| sleep 15
 checkAuditLogEnriched | lpad | logOnly || unlessForced || failAndExit
 logBoth "=== Quick audit configuration check complete "
 logOnly "" 
