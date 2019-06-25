@@ -285,10 +285,12 @@ function getNewestReportDate {
    files=$(cd "$reportLocation";
        /bin/ls -1t *-${HOSTNAME/\.*/}-audit_report.txt 2>/dev/null)
    for report in $files; do
-       tail -1 $report 2>&1 | grep --silent "Audit Review Complete"
+       #logOnly "Evaluating $report for a potential starting time"
+       tail -1 "$reportLocation/$report" 2>&1 | egrep --silent -e "Audit Review Complete"
        if [ $? -eq 0 ]; then
-           logOnly "Setting the audit start time from $report"
-           fileDate=$(stat -c %Z $report) ; # time since change in epoch seconds
+           #logOnly "Setting the audit start time from $report"
+           # time since change in epoch seconds
+           fileDate=$(stat -c %Z "$reportLocation/$report") ; 
            auditDate=$(date -d @$fileDate +"$dateFormat")
            echo "$auditDate"
 	   return
@@ -570,6 +572,7 @@ AUSEARCH $auditDateOptions --raw > $auditArchiveFile
 if [ $? -eq 0 ]; then
    logBoth "=== Archiving complete"
    auditDateOptions="$auditDateOptions -if $auditArchiveFile"
+   commonAuditOptions=" $auditDateOptions -i"
    trap "echo \"Removing $auditArchiveFile on break\"; rm $auditArchiveFile; exit 2" 2 3 4 5 6 7 8 9 10 12 13 14
 else 
    freeSpace=$(df -h --output=avail $(dirname $auditArchiveFile) | head -1 )
