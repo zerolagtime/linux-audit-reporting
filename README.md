@@ -99,8 +99,8 @@ This program lastmodified: 2019-06-24 03:45:56.914291214 -0400
 The software saves the details of each run to the report file.  What is shown
 is just a quick way to keep track of the current activity in generating
 the report.  Since audit records may be long, this allows the auditor
-to fire off the report, lock the workstation, and review the report at 
-their leisure.
+to start the log analysis, lock the workstation, and later review 
+the report without time pressure or the fear of missing something.
 ```
 =================================================
 === Quick audit configuration check
@@ -110,11 +110,10 @@ their leisure.
     Audit rules exist to monitor access to security-relevant logs
 === Quick audit configuration check complete
 ```
-**NOTE** The previous check is looking for audit record consistency, 
+**NOTE** _The previous check is looking for audit record consistency, 
 so if it detects unwatched audit records, then the software alerts 
 the auditor.  The review will continue, but the official
-record is that the auditor was warned that their review was incomplete.
-{::note}
+record is that the auditor was warned that their review was incomplete._
 
 ```
 =================================================
@@ -142,7 +141,7 @@ leverage Linux's existing anlysis tools.
 ```
 ### Industry-Specific Audit Reviews
 The Committee on National Security Systems (CNSS) and
-Joint Special Access Program (SAP) Implementation provide
+Joint Special Access Program (SAP) Implementation Guide (JSIG) provide
 a detailed list of auditable events on a system.
 Next, a full report is run, which goes through the requirements
 one-by-one so that the auditor is assured that all required 
@@ -231,12 +230,11 @@ During script execution, users may be prompted to expand the list of auditing ru
 if the system is not fully meeting the CNSS or JSIG requirements. 
 
 ### `01-security_log.rules`
-Record reads on key security log files as needed by AU-2.a.9
+> Record reads on key security log files as needed by AU-2.a.9
 
 ### `02-media.rules`
-Record execution of binaries or libraries that come with the system
-and provide media reading or [ISO][] generation, in support of AU-2.a.3 
-and AU-2.a.4.
+> Record execution of binaries or libraries that come with the system
+> and provide media reading or [ISO][] generation, in support of AU-2.a.3 
+> and AU-2.a.4.
 
-[iso] A general term that refers to the International Organization for 
-      Standardization 9660 file format commonly used in the creation of removable media.
+[iso]: https://en.wikipedia.org/wiki/ISO_image  "A general term that refers to the International Organization for Standardization 9660 file format commonly used in the creation of removable media."
