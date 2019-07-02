@@ -37,7 +37,7 @@ The program is archived at https://gitlab.ext.rdte.afrl.af.mil/toddch/linux-audi
   the AU-2 requirements for CNSS or JSIG (e.g. DISA STIG)
 - The user running the script must have `sudo` access
 - The script insists on recording who is running the report, 
-  so logging in as root, as security violation, is recorded
+  so always log in with a named user account to aid in proper recording
 
 ### Basics
 
