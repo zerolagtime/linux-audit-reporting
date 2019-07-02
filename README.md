@@ -2,41 +2,48 @@
 
 ## Executive Summary
 
-Automate a manual audit review of a system to ensure that complete
-coverage is obtained for CNSS 1253 or JSIG, both of which are based
-upon NIST SP 800-53r4.
+The purpose of the Linux Audit Reporting software is to
+automate a manual audit review of a system to ensure that complete
+coverage is obtained for CNSS (Committee on National Security 
+Systems) 1253 or JSIG (Joint Special Access Program (SAP) 
+Implentation Guide), both of which are based
+upon NIST SP (National Institute of Science and Technology
+Special Publication) 800-53r4.
 
 ## Background
 
 National security systems have stringent auditing requirements
 that monitor users.  Detailed audit records allow for complete
-and thorough forensic investigations of an incident.  Audit 
-records may even be considered as evidence, in the legal sense,
-should a prosecution be required.  Auditors must also be able
-to prove that they are routinely performing audit reviews.
+and thorough forensic investigations of an incident.  In the
+legal sense, audit records may be evidence.  Auditors must also be able
+to prove that they are performing audit reviews routinely.
 
-Auditing a Linux operating system has several pieces.  Configuring
-the audit subsystem, verifying that all audit requirements are
-covered, collecting the audits during daily usage, reviewing the
-audit records, archiving the audit records and any reports.  This 
-program primarily focuses on review and archiving of audit records.
+Auditing a Linux operating system involves several processes,
+including configuring the audit subsystem, verifying that all 
+audit requirements are covered, collecting the audits during 
+daily usage, reviewing the audit records, and archiving the 
+audit records and any reports.  The Linux Audit Reporting  program 
+focuses on review and archiving of audit records.
 
-This program is archived at https://gitlab.ext.rdte.afrl.af.mil/toddch/linux-audit-reporting [CAC required].
+The program is archived at https://gitlab.ext.rdte.afrl.af.mil/toddch/linux-audit-reporting (CAC required).
 
 ## Quick Usage
 
 ### Prerequisites
 
-- Version 1.0 only supports Red Hat Enterprise Linux 7.  Open an issue if other platforms are needed.  
-- The system must already be compliant with a baseline that configured the AU-2 requirements for CNSS or JSIG (e.g. DISA STIG)
-- The user running the script must have sudo access
-- The script insists on recording who is running the report, so logging in as root, as security violation, is recorded
+- Version 1.0 only supports Red Hat Enterprise Linux 7.  If the user 
+  requires other platforms, open an issue.  
+- The system must already be compliant with a baseline that configured 
+  the AU-2 requirements for CNSS or JSIG (e.g. DISA STIG)
+- The user running the script must have `sudo` access
+- The script insists on recording who is running the report, 
+  so logging in as root, as security violation, is recorded
 
 ### Basics
 
 1. Either check out the code from the Git repository or download the
    ZIP, copy it to the system, and extract it to the auditor's home directory
-1. Log in as an auditor who has sudo access
+1. Log in as an auditor who has `sudo` access
 1. Change the working directory to the folder with this script with `cd linux_audit_reporting`
 1. Start a review the last 30 days of audit records with `./linux_audit_reporting`
 1. Read the detailed report as listed at the end of the script. (e.g. `more archive/20190624_034601-syslog1-audit_report.txt`)
@@ -46,15 +53,17 @@ This program is archived at https://gitlab.ext.rdte.afrl.af.mil/toddch/linux-aud
 
 ### Bonus scripts
 A few additional files are present to improve future integration into
-a larger log reduction system.
+a larger log reduction system. THe following provides explanations of 
+these files.
 
 #### `continuous_audit_to_syslog`
-A small shell script to continuously watch the audit log and to provide
-near real-time translations into English that are then injected
-back into the system logger.  It follows rotations and only opens the
-audit.log file at startup or whenever it rotates.  This provides some
-nice context for audit records to other system events rather than the 
-mysterious four-line records that are difficult to read.
+A small shell script to watch the audit log continuously and to provide
+near real-time translations into English.  As events occur, the software
+injects the translations back into the system logger.  The script follows 
+log file rotations and only opens the audit.log file at startup or 
+whenever it rotates.  This provides context for audit records to other 
+system events rather than the mysterious four-line records that are 
+difficult to read.
 
 ###  `continuous_audit_to_syslog.service`
 A systemd service definition for the `continuous_audit_to_syslog` that
@@ -62,17 +71,16 @@ can be installed and started with `install.sh`
 
 ###  `install.sh`
 Install the systemd services defined in this script.  Registers and
-starts the service.  The scripts behind the service definition are
-installed into `/root`.  See the above list for specific services
+starts the service.  The software installs the scripts behind the service 
+definition into `/root`.  See the above list for specific services
 supported.
 
 ## Sample Run
 
 ### Start up
-```bash
-[auditor@syslog1 ~]$ cd linux_audit_reporting
-[auditor@syslog1 linux_audit_reportsing]$ ./linux_audit_reporting
-```
+    [auditor@syslog1 ~]$ *cd linux_audit_reporting*
+    [auditor@syslog1 linux_audit_reportsing]$ *./linux_audit_reporting*
+
 ```
 =================================================
 Audit review of:     syslog1.example.com on Mon Jun 24 03:46:01 EDT 2019
@@ -88,10 +96,11 @@ This program lastmodified: 2019-06-24 03:45:56.914291214 -0400
 ```
 
 ### Sanity Checks and Review Prep
-The details of each run are saved to the report file.  What is shown
+The software saves the details of each run to the report file.  What is shown
 is just a quick way to keep track of the current activity in generating
 the report.  Since audit records may be long, this allows the auditor
-to fire off the report and come back.
+to fire off the report, lock the workstation, and review the report at 
+their leisure.
 ```
 =================================================
 === Quick audit configuration check
@@ -101,10 +110,11 @@ to fire off the report and come back.
     Audit rules exist to monitor access to security-relevant logs
 === Quick audit configuration check complete
 ```
-*NOTE* The previous check is looking for consistency in the audit records
-so if it detects that some audit records are not being watched, then
-the auditor is alerted.  The review will continue, but the official
+**NOTE** The previous check is looking for audit record consistency, 
+so if it detects unwatched audit records, then the software alerts 
+the auditor.  The review will continue, but the official
 record is that the auditor was warned that their review was incomplete.
+{::note}
 
 ```
 =================================================
@@ -117,8 +127,8 @@ once at the beginning of each review run.  This should make any
 reads by a non-auditor much more obvious.
 
 ### Basic Reports
-A few overview reports are run which set context and 
-leverage the existing anlysis tools that come with Linux.
+The software runs a few overview reports, which set context and 
+leverage Linux's existing anlysis tools.
 ```
 =================================================
 === AUDIT REPORT: Summary
@@ -130,13 +140,16 @@ leverage the existing anlysis tools that come with Linux.
 === Description:  Strange events that should rarely occur
 === AUDIT REPORT: Anomaly Events
 ```
-### CNSS/JSIG Specific Audit Reviews
-A full report is then run which goes through the requirements
-one by one so that the auditor can be assured that they
-are reviewing all required rules.
+### Industry-Specific Audit Reviews
+The Committee on National Security Systems (CNSS) and
+Joint Special Access Program (SAP) Implementation provide
+a detailed list of auditable events on a system.
+Next, a full report is run, which goes through the requirements
+one-by-one so that the auditor is assured that all required 
+rules are reviewed.
 
-Sometimes, an error will be detected.  The auditor will
-be alerted about problem areas.  One example is below.
+Sometimes, the software will detect an error.  When this occurs,
+the auditor will be alerted about problem areas.  One example is below.
 ```
 =================================================
 === AUDIT REPORT: Digital Media (mount/unmount)
@@ -163,20 +176,20 @@ be alerted about problem areas.  One example is below.
                          sudo mv 02-media.rules /etc/audit/rules.d && \
                          sudo service auditd restart
 ```
-A system-specific file will be created help the auditor with a one-time
-fix to the system that provides better coverage of the requirement.
+A system-specific file will be created to help the auditor with a one-time
+fix to the system which provides better coverage of the requirement.
 
-## RMF Requirements Satisfied
-Surprise!  This script does *not* satisfy AU-2, which is just a requirement
-to collect the audit.  If the system had no auditing configuration, this
-script would not be effective.
+## Risk Management Framework  Requirements Satisfied
+Surprise!  This script does *not* satisfy AU-2, which only spells out  
+specific event types to be audited.  If the system had no auditing 
+configuration, this script would not be effective.
 
 In the list of NIST SP 800-53r4 requirements below, this script either
 directly implements the requirement, or empowers the user to satisfy
 the requirement with a few additional procedures.  An example of 
-"additional procecures" might be steps to mount a USB storage device to
-the system and then to use the `-a` command line option to automatically
-archive the audit log and generated report.
+"additional procecures" might include steps to mount a USB storage device to
+the system and then to use the `-a` command line option to 
+archive the audit log and generated report automatically.
 
 * AC-5 - Separation of Duties
 * AU-6 - Audit Review, Analysis, and Reporting
@@ -191,35 +204,39 @@ archive the audit log and generated report.
 * CM-3.d - Configuration Change Control - audit configuration changes
 * AC-6(9) - Least Privilege - auditing use of privileged functions
 
-### SUDO Considerations
+### Sudo Considerations
 Some sites may choose to not grant an auditor broad access to the system
-via sudo.  All sudo access inside the `linux_audit_reporting` script is one of these command lines:
+via Sudo.  All Sudo access inside the `linux_audit_reporting` script is one of these command lines:
 * `auditctl -l`
 * `cat /etc/audit/auditd.conf`
-* The quickAuditCheck function would need to be optimized to extract the
-  the rules.d files to a temporary location where permission is less onerous,
-  perform the analysis, and then delete the temporary location
+* The user would need to opitmize the quickAuditCheck function
+  to extract the rules.d files to a temporary location where permission 
+  is less onerous,`perform the analysis, and then delete the temporary 
+  location
 * `/usr/sbin/ausearch` _multiple parameters_
 * `/usr/sbin/aureport` _multiple parameters_
-* List the sudo privileges (used to verify sudo access)
+* List the Sudo privileges (used to verify Sudo access)
 
-No effort has been made to provide a very restricted sudo configuration
-as would be needed to satisfy AC-6, "Least Privilege".
+The software author made no effort to provide a very restricted Sudo configuration
+as required to satisfy AC-6, "Least Privilege".
 
-Also, if the script detects configuration deficiencies, fixes are presented
-to the auditor.  On a system with restrictive sudo rules, the 
+In addition, if the script detects configuration deficiencies, the software 
+presents fixes fixes to the auditor.  On a system with restrictive Sudo rules, the 
 system administrator should take the recommended changes and incorporate
 them into the system baseline.
 
 ### Recommended Audit Changes
 
-During script execution, some audit rule definition changes may be made
-if it some CNSS or JSIG requirements aren't being met.
+During script execution, users may be prompted to expand the list of auditing rules
+if the system is not fully meeting the CNSS or JSIG requirements. 
 
 ### `01-security_log.rules`
 Record reads on key security log files as needed by AU-2.a.9
 
 ### `02-media.rules`
 Record execution of binaries or libraries that come with the system
-and provide media reading or ISO generation, in support of AU-2.a.3 
+and provide media reading or [ISO][] generation, in support of AU-2.a.3 
 and AU-2.a.4.
+
+[iso] A general term that refers to the International Organization for 
+      Standardization 9660 file format commonly used in the creation of removable media.
